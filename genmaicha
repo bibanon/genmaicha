@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+# Written by Daniel Oaks <daniel@danieloaks.net>
+# Released under the ISC license
+"""genmaicha - An IRC frontend to senchado and grab-site.
+
+This is in a very early stage right now. Things may break, may not
+work properly or may not be implemented nicely.
+
+Usage:
+    genmaicha connect [--config <filename>]
+    genmaicha (-h | --help)
+    genmaicha --version
+
+Options:
+    --config <filename>   Filename to use for the configuration file [default: config.yaml].
+"""
+import asyncio
+import json
+import subprocess
+
+from docopt import docopt
+from girc.formatting import escape
+import girc
+import ircmatch
+import websockets
+import yaml
+
+__version__ = '0.0.1'
+
+# lots of globals here because we don't use a bot class at this stage,
+#   just passing around global vars
+global control_channel
+control_channel = None
+global ws_uri
+ws_uri = None
+global grab_site_binary
+grab_site_binary = None
+global grabber
+grabber = None
+
+
+# grab-site handler
+# connect to the websocket port
+class GrabSiteHandler():
+    def __init__(self, server, channel, ws_uri, grab_site_binary):
+        self.server = server
+        self.channel = channel
+        self.ws_uri = ws_uri
+        self.ws = None
+        self.grab_site_binary = grab_site_binary
+
+        grabs = {}
+
+    @asyncio.coroutine
+    def connect_dashboard(self):
+        try:
+            self.ws = yield from websockets.connect(self.ws_uri)
+
+            yield from self.ws.send(json.dumps({
+                'type': 'hello',
+                'mode': 'dashboard',
+                'user_agent': 'genmaicha-irc/{}'.format(__version__),
+            }))
+
+            self.server.msg(self.channel, 'Dashboard connected')
+
+            while True:
+                data = yield from self.ws.recv()
+                print('ws:', data)
+                self.server.msg(self.channel, 'got data: {}'.format(data))
+        finally:
+            self.server.msg(self.channel, 'Dashboard connection closed')
+            self.ws.close()
+            self.ws = None
+
+    @asyncio.coroutine
+    def grab_url(self, url):
+        self.server.msg(self.channel, 'Starting grab on {}'.format(url))
+
+
+# irc reactor
+reactor = girc.Reactor()
+
+
+@reactor.handler('in', 'raw', priority=1)
+def handle_raw_in(event):
+    print(event['server'].name, ' ->', escape(event['data']))
+
+
+@reactor.handler('out', 'raw', priority=1)
+def handle_raw_out(event):
+    print(event['server'].name, '<- ', escape(event['data']))
+
+
+@reactor.handler('in', 'join')
+def handle_welcome(event):
+    if event['source'].is_me and any(chan.name == control_channel for chan in event['channels']):
+        global grabber
+        grabber = GrabSiteHandler(event['server'], control_channel, ws_uri, grab_site_binary)
+        asyncio.async(grabber.connect_dashboard())
+
+
+# starting everything!
+if __name__ == '__main__':
+    arguments = docopt(__doc__, version=__version__)
+
+    # load config
+    config = yaml.load(open(arguments['--config'], 'r').read())
+
+    # grab-site stuff
+    ws_uri = config['grab-site']['ws-uri']
+    grab_site_binary = config['grab-site']['binary']
+
+    # make sure grab_site_binary points to the right file
+    return_code = subprocess.call([grab_site_binary, '--help'],
+                                  stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL)
+    if return_code:
+        print('Could not open grab-site binary [{}], got error code {}'
+              ''.format(grab_site_binary, return_code))
+
+    # irc stuff
+    nick = config['irc']['nick']
+    user = config['irc']['user']
+    real = config['irc']['real']
+    control_channel = config['irc']['control-channel']
+
+    host = config['irc']['host']
+    use_ssl = config['irc'].get('ssl', False)
+    port = int(config['irc'].get('port', 6697 if use_ssl else 6667))
+
+    # connect to the IRC server
+    server = reactor.create_server('local')
+    server.set_user_info(nick, user=user, real=real)
+    server.join_channels(control_channel)
+    server.connect(host, port, ssl=use_ssl, family=0)
+
+    # start the event loop
+    try:
+        reactor.run_forever()
+    except KeyboardInterrupt:
+        reactor.shutdown('Closed')

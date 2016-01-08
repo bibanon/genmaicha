@@ -1,0 +1,39 @@
+# genmaicha configuration file
+
+# IRC
+#
+irc:
+    # hostname of the server
+    host: "localhost"
+
+    # # port to connect to, defaults are 6667 (no SSL) and 6697 (using SSL)
+    # port: 6697
+
+    # connect securely using SSL
+    ssl: false
+
+    # user details to use when connecting
+    nick: genmaicha
+    user: archiver
+    real: "Website archiving bot"
+
+    # channel on the IRC server which controls the bot
+    #   and where we will dump status information
+    control-channel: "#genmaicha-test-channel"
+
+    # masks allowed to issue bot administration commands
+    admin-masks:
+        - "*!*@localhost"
+
+    # archiving permissions
+    #   allow users with this mode or above to archive things
+    archiving_mode: v
+
+# grab-site
+#
+grab-site:
+    # websocket uri
+    ws-uri: "ws://localhost:29001/"
+
+    # location of the grab-site binary
+    binary: "grab-site"
