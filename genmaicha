@@ -17,6 +17,7 @@ Options:
 import asyncio
 import json
 import subprocess
+import threading
 
 from docopt import docopt
 from girc.formatting import escape
@@ -49,6 +50,7 @@ class GrabSiteHandler():
         self.ws = None
         self.grab_site_binary = grab_site_binary
 
+        grab_lock = threading.Lock()
         grabs = {}
 
     @asyncio.coroutine
@@ -66,16 +68,34 @@ class GrabSiteHandler():
 
             while True:
                 data = yield from self.ws.recv()
+                # TODO: actually interpret messages properly here
+                #   possibly with a proper event system (ircreactor-ish?)
                 print('ws:', data)
-                self.server.msg(self.channel, 'got data: {}'.format(data))
+                self.msg('got data: {}'.format(data))
         finally:
-            self.server.msg(self.channel, 'Dashboard connection closed')
+            self.msg('Dashboard connection closed')
             self.ws.close()
             self.ws = None
 
+    def msg(*args, **kwargs):
+        self.server.msg(channel, *args, **kwargs)
+
     @asyncio.coroutine
-    def grab_url(self, url):
-        self.server.msg(self.channel, 'Starting grab on {}'.format(url))
+    def grab_url(self, source, url, recursion=False):
+        # generate new grab ID
+        with self.grab_lock:
+            gid = None
+            while gid and gid in self.grabs:
+                gid = ''.join([random.choice(string.ascii_lowercase + string.digits) for n in range(35)])
+
+            self.grabs[gid] = None
+
+        options = ' with recursion' if recursion else ' without recursion'
+        self.msg('{source}: Queued {url} for archival{options}.'.format(
+                 source=source, url=url, options=options))
+        self.msg('{source}: Use !status {gid} for updates, !abort {gid} to abort.'.format(
+                 source=source, gid=gid))
+        # self.msg('{source}: Options: etc')
 
 
 # irc reactor

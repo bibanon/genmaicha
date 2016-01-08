@@ -27,7 +27,10 @@ irc:
 
     # archiving permissions
     #   allow users with this mode or above to archive things
-    archiving_mode: v
+    archiving-mode: v
+
+    # command prefix
+    command-prefix: "!"
 
 # grab-site
 #
