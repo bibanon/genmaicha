@@ -77,8 +77,8 @@ class GrabSiteHandler():
             self.ws.close()
             self.ws = None
 
-    def msg(*args, **kwargs):
-        self.server.msg(channel, *args, **kwargs)
+    def msg(self, *args, **kwargs):
+        self.server.msg(self.channel, *args, **kwargs)
 
     @asyncio.coroutine
     def grab_url(self, source, url, recursion=False):
